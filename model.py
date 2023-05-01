@@ -227,7 +227,3 @@ def run():
                                               poolsize
                                              ]], columns=cols), ignore_index=True)
     return(df)
-
-
-randomID = str(random.choice(range(1000000)))
-run().to_csv('data8/test'+randomID+'.csv', index=False)
