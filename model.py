@@ -5,6 +5,7 @@ import itertools
 import math
 import time
 import concurrent.futures
+import sys
 
 class Landscape:
     def __init__(self, smoothness, length=2000):
@@ -135,26 +136,15 @@ class Team():
         return self.landscape.heights[np.argmax(self.aggregate(maps))]
 
 
-
-# In[307]:
-
 poolsize = 12
 pool = list(range(1, poolsize+1))
 h_each = 3 # Number of step sizes each agent has
 per_team = 9 # Number of agents per team
 all_perm = list(itertools.permutations(pool, r=h_each)) # All possible step size combo
 Smoothness = range(1, 9)
-Sigma = [0, 8, 12]
+Sigma = [0, 4, 8, 12]
 Trust = [0, 0.33, 0.5, 1]
-runs = 1
 
-LS = [] # List of landscapes to test
-Experts = dict()
-for s in Smoothness:
-    for run in range(runs):
-        np.random.seed()
-        L = Landscape(s)
-        LS.append(L)
 
 def calc_score(a, L):
     """Calculate agent's avg search score from all starting points of landscape"""
@@ -183,47 +173,57 @@ def tournament(team, i):
     np.random.seed()
     return team.tournament(i)
 
-def run():
+def run(s, t, sigma=8):
     cols = ['smoothness', 'diverse', 'expert', 
             'd_heuristics', 'x_heuristics', 
             'trust', 'sigma', 'poolsize']
     df = pd.DataFrame(columns=cols)
 
-    for L in LS:
-        for t in Trust: # trust level
-            for sigma in Sigma:
-            
-                expert = find_experts(L, t)
-                for e in expert.members:
-                    e.sigma = sigma
+    L = Landscape(s)
 
-                d_heu = random.sample(all_perm, per_team) # Randomly generate diverse group
-                diverse = Team([Agent(i+len(all_perm), d_heu[i], L, sigma) for i in range(per_team)], 
-                                                L, 
-                                                trust_level=t)
-                d_record = []
-                x_record = []
+    expert = find_experts(L, t)
+    for e in expert.members:
+        e.sigma = sigma
 
-                if __name__ == '__main__':
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        results = [executor.submit(tournament, diverse, i) for i in range(L.length)]
+    d_heu = random.sample(all_perm, per_team) # Randomly generate diverse group
+    diverse = Team([Agent(i+len(all_perm), d_heu[i], L, sigma) for i in range(per_team)], 
+                                    L, 
+                                    trust_level=t)
+    d_record = []
+    x_record = []
 
-                        for f in concurrent.futures.as_completed(results):
-                            d_record.append(f.result())
+    if __name__ == '__main__':
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = [executor.submit(tournament, diverse, i) for i in range(L.length)]
 
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        results = [executor.submit(tournament, expert, i) for i in range(L.length)]
+            for f in concurrent.futures.as_completed(results):
+                d_record.append(f.result())
 
-                        for f in concurrent.futures.as_completed(results):
-                            x_record.append(f.result())
-               
-                df = df.append(pd.DataFrame([[L.s,
-                                              np.mean(d_record), 
-                                              np.mean(x_record), 
-                                              list(itertools.chain.from_iterable([a.h for a in diverse.members])), 
-                                              list(itertools.chain.from_iterable([a.h for a in expert.members])), 
-                                              t,
-                                              sigma,
-                                              poolsize
-                                             ]], columns=cols), ignore_index=True)
-    return(df)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = [executor.submit(tournament, expert, i) for i in range(L.length)]
+
+            for f in concurrent.futures.as_completed(results):
+                x_record.append(f.result())
+   
+    df = pd.concat([df, pd.DataFrame([[L.s,
+                                  np.mean(d_record), 
+                                  np.mean(x_record), 
+                                  list(itertools.chain.from_iterable([a.h for a in diverse.members])), 
+                                  list(itertools.chain.from_iterable([a.h for a in expert.members])), 
+                                  t,
+                                  sigma,
+                                  poolsize
+                                 ]], columns=cols)], ignore_index=True)
+    df.to_csv('data.csv', index=False)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("error")
+        sys.exit(1)
+
+    s = int(sys.argv[1])
+    t = float(sys.argv[2])
+    sigma = float(sys.argv[3])
+    run(s, t, sigma)
+
